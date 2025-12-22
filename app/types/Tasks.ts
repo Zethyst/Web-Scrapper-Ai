@@ -1,6 +1,5 @@
 /**
- * Task Types for Web Scraping + AI Q&A Application
- * 
+
  * === DRIZZLE ORM MIGRATION NOTES ===
  * To migrate to Drizzle ORM:
  * 

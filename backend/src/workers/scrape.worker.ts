@@ -7,8 +7,7 @@ import { db } from "../db/index";
 import { tasks } from "../db/schema";
 import { eq } from "drizzle-orm";
 import * as cheerio from "cheerio";
-import type { Element } from "domhandler";
-import type { Cheerio } from "cheerio";
+import type { AnyNode } from "domhandler";
 
 async function scrapeWebsite(url: string): Promise<string> {
   try {
@@ -53,7 +52,7 @@ async function scrapeWebsite(url: string): Promise<string> {
 
     // Extract text from headings and paragraphs
     selectors.forEach((selector) => {
-      $(selector).each((_index: number, element: Cheerio<any>) => {
+      $(selector).each((_index: number, element: AnyNode) => {
         const text = $(element).text().trim();
         if (text && text.length > 10) {
           textParts.push(text);
