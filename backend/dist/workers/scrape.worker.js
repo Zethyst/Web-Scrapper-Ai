@@ -156,51 +156,67 @@ async function queryAI(scrapedContent, question) {
         throw new Error(`AI query failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
 }
-const worker = new bullmq_1.Worker("scrape-tasks", async (job) => {
-    const { taskId, websiteUrl, question } = job.data;
-    try {
-        await index_1.db
-            .update(schema_1.tasks)
-            .set({
-            status: "processing",
-            updatedAt: new Date(),
-        })
-            .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, taskId));
-        const scrapedContent = await scrapeWebsite(websiteUrl);
-        const aiAnswer = await queryAI(scrapedContent, question);
-        await index_1.db
-            .update(schema_1.tasks)
-            .set({
-            status: "completed",
-            scrapedContent,
-            aiAnswer,
-            updatedAt: new Date(),
-        })
-            .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, taskId));
-        console.log(`Task ${taskId} completed successfully`);
-    }
-    catch (error) {
-        // Update task as failed
-        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-        await index_1.db
-            .update(schema_1.tasks)
-            .set({
-            status: "failed",
-            errorMessage,
-            updatedAt: new Date(),
-        })
-            .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, taskId));
-        console.error(`Task ${taskId} failed:`, errorMessage);
-        throw error; // Re-throw to mark job as failed in BullMQ
-    }
-}, {
-    connection: connection_1.connection,
-    concurrency: 5,
-});
-worker.on("completed", (job) => {
-    console.log(`Job ${job.id} completed`);
-});
-worker.on("failed", (job, err) => {
-    console.error(`Job ${job?.id} failed:`, err.message);
-});
-console.log("Scrape worker started and listening for jobs...");
+// Initialize worker with error handling
+let worker;
+try {
+    console.log("Creating BullMQ worker...");
+    worker = new bullmq_1.Worker("scrape-tasks", async (job) => {
+        const { taskId, websiteUrl, question } = job.data;
+        try {
+            await index_1.db
+                .update(schema_1.tasks)
+                .set({
+                status: "processing",
+                updatedAt: new Date(),
+            })
+                .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, taskId));
+            const scrapedContent = await scrapeWebsite(websiteUrl);
+            const aiAnswer = await queryAI(scrapedContent, question);
+            await index_1.db
+                .update(schema_1.tasks)
+                .set({
+                status: "completed",
+                scrapedContent,
+                aiAnswer,
+                updatedAt: new Date(),
+            })
+                .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, taskId));
+            console.log(`✓ Task ${taskId} completed successfully`);
+        }
+        catch (error) {
+            // Update task as failed
+            const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+            await index_1.db
+                .update(schema_1.tasks)
+                .set({
+                status: "failed",
+                errorMessage,
+                updatedAt: new Date(),
+            })
+                .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, taskId));
+            console.error(`✗ Task ${taskId} failed:`, errorMessage);
+            throw error; // Re-throw to mark job as failed in BullMQ
+        }
+    }, {
+        connection: connection_1.connection,
+        concurrency: 5,
+    });
+    worker.on("completed", (job) => {
+        console.log(`✓ Job ${job.id} completed`);
+    });
+    worker.on("failed", (job, err) => {
+        console.error(`✗ Job ${job?.id} failed:`, err.message);
+    });
+    worker.on("ready", () => {
+        console.log("✓ Scrape worker ready and listening for jobs...");
+    });
+    worker.on("error", (error) => {
+        console.error("✗ Worker error:", error);
+    });
+    console.log("✓ Scrape worker initialized successfully");
+}
+catch (error) {
+    console.error("✗ Failed to create worker:", error);
+    // Don't throw - allow the API server to start even if worker fails
+    // This helps with debugging
+}

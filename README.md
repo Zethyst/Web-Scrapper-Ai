@@ -20,9 +20,11 @@
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)&nbsp;
 
 **Queue Management:**
+
 ![BullMQ](https://img.shields.io/badge/BullMQ-FF6A00?style=for-the-badge&logo=bullmq&logoColor=white)&nbsp;
 
 **Web Scraping:**
+
 ![Cheerio](https://img.shields.io/badge/Cheerio-FFC400?style=for-the-badge&logo=cheerio&logoColor=black)&nbsp;
 
 **AI Integration:**

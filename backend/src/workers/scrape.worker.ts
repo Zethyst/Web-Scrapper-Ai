@@ -146,65 +146,84 @@ async function queryAI(scrapedContent: string, question: string): Promise<string
   }
 }
 
-const worker = new Worker(
-  "scrape-tasks",
-  async (job) => {
-    const { taskId, websiteUrl, question } = job.data;
+// Initialize worker with error handling
+let worker: Worker;
 
-    try {
-      await db
-        .update(tasks)
-        .set({
-          status: "processing",
-          updatedAt: new Date(),
-        })
-        .where(eq(tasks.id, taskId));
+try {
+  console.log("Creating BullMQ worker...");
+  
+  worker = new Worker(
+    "scrape-tasks",
+    async (job) => {
+      const { taskId, websiteUrl, question } = job.data;
 
-      const scrapedContent = await scrapeWebsite(websiteUrl);
+      try {
+        await db
+          .update(tasks)
+          .set({
+            status: "processing",
+            updatedAt: new Date(),
+          })
+          .where(eq(tasks.id, taskId));
 
-      const aiAnswer = await queryAI(scrapedContent, question);
+        const scrapedContent = await scrapeWebsite(websiteUrl);
 
-      await db
-        .update(tasks)
-        .set({
-          status: "completed",
-          scrapedContent,
-          aiAnswer,
-          updatedAt: new Date(),
-        })
-        .where(eq(tasks.id, taskId));
+        const aiAnswer = await queryAI(scrapedContent, question);
 
-      console.log(`Task ${taskId} completed successfully`);
-    } catch (error) {
-      // Update task as failed
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
+        await db
+          .update(tasks)
+          .set({
+            status: "completed",
+            scrapedContent,
+            aiAnswer,
+            updatedAt: new Date(),
+          })
+          .where(eq(tasks.id, taskId));
 
-      await db
-        .update(tasks)
-        .set({
-          status: "failed",
-          errorMessage,
-          updatedAt: new Date(),
-        })
-        .where(eq(tasks.id, taskId));
+        console.log(`✓ Task ${taskId} completed successfully`);
+      } catch (error) {
+        // Update task as failed
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
 
-      console.error(`Task ${taskId} failed:`, errorMessage);
-      throw error; // Re-throw to mark job as failed in BullMQ
+        await db
+          .update(tasks)
+          .set({
+            status: "failed",
+            errorMessage,
+            updatedAt: new Date(),
+          })
+          .where(eq(tasks.id, taskId));
+
+        console.error(`✗ Task ${taskId} failed:`, errorMessage);
+        throw error; // Re-throw to mark job as failed in BullMQ
+      }
+    },
+    {
+      connection,
+      concurrency: 5,
     }
-  },
-  {
-    connection,
-    concurrency: 5,
-  }
-);
+  );
 
-worker.on("completed", (job) => {
-  console.log(`Job ${job.id} completed`);
-});
+  worker.on("completed", (job) => {
+    console.log(`✓ Job ${job.id} completed`);
+  });
 
-worker.on("failed", (job, err) => {
-  console.error(`Job ${job?.id} failed:`, err.message);
-});
+  worker.on("failed", (job, err) => {
+    console.error(`✗ Job ${job?.id} failed:`, err.message);
+  });
 
-console.log("Scrape worker started and listening for jobs...");
+  worker.on("ready", () => {
+    console.log("✓ Scrape worker ready and listening for jobs...");
+  });
+
+  worker.on("error", (error) => {
+    console.error("✗ Worker error:", error);
+  });
+
+  console.log("✓ Scrape worker initialized successfully");
+} catch (error) {
+  console.error("✗ Failed to create worker:", error);
+  // Don't throw - allow the API server to start even if worker fails
+  // This helps with debugging
+}
