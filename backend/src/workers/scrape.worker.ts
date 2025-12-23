@@ -11,77 +11,177 @@ import type { AnyNode } from "domhandler";
 
 async function scrapeWebsite(url: string): Promise<string> {
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-      },
-    });
+    // More realistic browser headers to avoid bot detection
+    const headers: HeadersInit = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Upgrade-Insecure-Requests": "1",
+    };
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers,
+        signal: controller.signal,
+        redirect: "follow",
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError instanceof Error && fetchError.name === "AbortError") {
+        throw new Error("Request timeout: Website took too long to respond");
+      }
+      throw fetchError;
+    }
+
+    // Handle non-standard status codes (like 471 from Cloudflare/anti-bot)
     if (!response.ok) {
-      throw new Error(`Failed to fetch website: ${response.status} ${response.statusText}`);
+      const status = response.status;
+      let errorMessage = `Failed to fetch website: ${status} ${response.statusText}`;
+      
+      // Provide more helpful error messages for common issues
+      if (status === 403 || status === 471) {
+        errorMessage = `Access denied (${status}): Website may be blocking automated requests. This could be due to Cloudflare protection or anti-bot measures.`;
+      } else if (status === 429) {
+        errorMessage = `Rate limited (${status}): Too many requests. Please try again later.`;
+      } else if (status >= 500) {
+        errorMessage = `Server error (${status}): The website's server is experiencing issues.`;
+      }
+      
+      throw new Error(errorMessage);
     }
 
     const html = await response.text();
+    
+    if (!html || html.length < 100) {
+      throw new Error("Website returned empty or very short content");
+    }
+
     const $ = cheerio.load(html);
 
-    // Remove script and style elements
-    $("script, style, noscript, iframe").remove();
+    // Log HTML length for debugging
+    console.log(`HTML length: ${html.length} characters`);
 
-    // Extract text from important elements
-    const selectors = [
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "h5",
-      "h6",
-      "p",
-      "article",
-      "main",
-      "section",
-      "div.content",
-      "div.main-content",
-      "div.article",
-      "li",
-    ];
+    // Remove script, style, and other non-content elements
+    $("script, style, noscript, iframe, svg").remove();
 
-    const textParts: string[] = [];
+    // Strategy 1: Try to get all visible text first (most aggressive)
+    let textContent = $("body").text().trim();
+    
+    // Clean up text aggressively
+    textContent = textContent
+      .replace(/\s+/g, " ") // Normalize all whitespace to single spaces
+      .replace(/\n+/g, " ") // Replace newlines with spaces
+      .trim();
 
-    // Extract text from headings and paragraphs
-    selectors.forEach((selector) => {
-      $(selector).each((_index: number, element: AnyNode) => {
-        const text = $(element).text().trim();
-        if (text && text.length > 10) {
-          textParts.push(text);
+    console.log(`Initial text extraction: ${textContent.length} characters`);
+
+    // If we got very little content, try more specific selectors
+    if (textContent.length < 100) {
+      console.log("Text too short, trying specific selectors...");
+      
+      const selectors = [
+        "article",
+        "main",
+        "[role='main']",
+        ".content",
+        ".main-content",
+        ".article-content",
+        ".post-content",
+        ".entry-content",
+        "#content",
+        "#main-content",
+        "h1, h2, h3, h4, h5, h6",
+        "p",
+        "section",
+        "div",
+        "span",
+        "li",
+        "td",
+        "dd",
+        "blockquote",
+        "pre",
+        "code",
+      ];
+
+      const textParts: string[] = [];
+      const seenTexts = new Set<string>();
+
+      for (const selector of selectors) {
+        try {
+          $(selector).each((_index: number, element: AnyNode) => {
+            const text = $(element).text().trim();
+            // Very lenient: accept any text with 3+ characters
+            if (text && text.length >= 3) {
+              const normalized = text.replace(/\s+/g, " ");
+              if (!seenTexts.has(normalized)) {
+                seenTexts.add(normalized);
+                textParts.push(normalized);
+              }
+            }
+          });
+          
+          // If we found enough content, stop
+          if (textParts.join(" ").length > 100) {
+            break;
+          }
+        } catch (e) {
+          // Skip invalid selectors
         }
-      });
-    });
+      }
 
-    // Fallback: get all text if selectors didn't find much
-    if (textParts.length === 0) {
-      const bodyText = $("body").text();
-      if (bodyText) {
-        textParts.push(bodyText);
+      if (textParts.length > 0) {
+        textContent = textParts.join(" ");
+        console.log(`Selector extraction: ${textContent.length} characters`);
       }
     }
 
-    // Combine and clean up text
-    let textContent = textParts
-      .join("\n\n")
-      .replace(/\s+/g, " ") // Normalize whitespace
-      .replace(/\n\s*\n/g, "\n\n") // Normalize line breaks
-      .trim();
-
-    // Limit to 10k characters for AI processing
-    if (textContent.length > 10000) {
-      textContent = textContent.substring(0, 10000) + "...";
+    // If still no content, try getting ALL text nodes
+    if (textContent.length < 50) {
+      console.log("Still too short, extracting all text...");
+      textContent = $.text().replace(/\s+/g, " ").trim();
+      console.log(`Full text extraction: ${textContent.length} characters`);
     }
 
-    if (!textContent || textContent.length < 50) {
-      throw new Error("Insufficient content scraped from website");
+    // Remove common noise patterns (but keep most content)
+    textContent = textContent
+      .replace(/Cookie\s*policy/gi, "")
+      .replace(/Privacy\s*policy/gi, "")
+      .replace(/Terms\s*of\s*service/gi, "")
+      .replace(/Skip\s*to\s*content/gi, "")
+      .replace(/Accept\s*cookies/gi, "")
+      .replace(/\[object\s*Object\]/gi, "")
+      .trim();
+
+    // Limit to 15k characters for AI processing (increased from 10k)
+    if (textContent.length > 15000) {
+      textContent = textContent.substring(0, 15000) + "...";
+    }
+
+    console.log(`Final text length: ${textContent.length} characters`);
+
+    // Very lenient minimum - if we got ANY text, try to use it
+    if (!textContent || textContent.length < 20) {
+      // Log the first 500 characters of HTML for debugging
+      const htmlPreview = html.substring(0, 500).replace(/\s+/g, " ");
+      console.error(`HTML preview: ${htmlPreview}...`);
+      
+      throw new Error(
+        `Insufficient content scraped from website (only ${textContent.length} characters found). ` +
+        `The website may require JavaScript to load content, may be blocking automated access, ` +
+        `or may be a single-page application (SPA). HTML length: ${html.length} characters.`
+      );
     }
 
     return textContent;
