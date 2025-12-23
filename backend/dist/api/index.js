@@ -14,7 +14,11 @@ console.log("Loading BullMQ worker...");
 require("../workers/scrape.worker");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: [
+        "http://localhost:3000",
+        "https://web-scraper-ai-nine.vercel.app",
+        "https://web-scrapper-ai-blush.vercel.app",
+    ],
     credentials: true,
 }));
 app.use(express_1.default.json());
