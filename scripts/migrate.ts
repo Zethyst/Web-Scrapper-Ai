@@ -36,6 +36,17 @@ async function runMigration() {
   });
 
   try {
+    const existing = await sql`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'tasks'
+      LIMIT 1
+    `;
+
+    if (existing.length > 0) {
+      console.log("✅ Table 'tasks' already exists. Nothing to migrate.");
+      return;
+    }
+
     console.log("🔄 Reading migration file...");
     const migrationFile = readFileSync(
       join(process.cwd(), "drizzle", "0000_thankful_dracula.sql"),
@@ -43,8 +54,7 @@ async function runMigration() {
     );
 
     console.log("🚀 Applying migration to database...");
-    
-    // Split by semicolons and filter out empty statements
+
     const statements = migrationFile
       .split(";")
       .map((s) => s.trim())
@@ -60,13 +70,7 @@ async function runMigration() {
     console.log("✅ Migration completed successfully!");
   } catch (error) {
     console.error("❌ Migration failed:", error);
-    
-    // Check if table already exists
-    if (error instanceof Error && error.message.includes("already exists")) {
-      console.log("ℹ️  Table 'tasks' already exists. Migration may have already been applied.");
-    } else {
-      process.exit(1);
-    }
+    process.exit(1);
   } finally {
     await sql.end();
   }
