@@ -15,13 +15,41 @@ export const taskKeys = {
  * Fetch all tasks from backend API
  */
 export async function getAllTasks(): Promise<Task[]> {
-  const response = await fetch(`${API_BASE_URL}/tasks`);
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch tasks: ${response.status} ${response.statusText}`);
+  try {
+    console.log(`[getAllTasks] Fetching from: ${API_BASE_URL}/tasks`);
+    const response = await fetch(`${API_BASE_URL}/tasks`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    console.log(`[getAllTasks] Response status: ${response.status} ${response.statusText}`);
+    
+    if (!response.ok) {
+      let errorMessage = `Failed to fetch tasks: ${response.status} ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorData.error || errorMessage;
+        console.error(`[getAllTasks] Error data:`, errorData);
+      } catch (e) {
+        const text = await response.text();
+        console.error(`[getAllTasks] Error response text:`, text);
+        errorMessage = `${errorMessage}. Response: ${text.substring(0, 200)}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    const data = await response.json();
+    console.log(`[getAllTasks] Successfully fetched ${data.length} tasks`);
+    return data;
+  } catch (error) {
+    console.error(`[getAllTasks] Fetch error:`, error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error(`Cannot connect to backend API at ${API_BASE_URL}. Make sure the backend server is running.`);
+    }
+    throw error;
   }
-  
-  return await response.json();
 }
 
 /**

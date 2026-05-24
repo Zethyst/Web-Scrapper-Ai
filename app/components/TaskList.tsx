@@ -19,8 +19,17 @@ export function TaskList({ tasks, isLoading, error }: TaskListProps) {
   }
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <p className="text-sm text-red-500">Error loading tasks: {error.message}</p>
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
+        <p className="text-sm text-red-500 font-medium">Error loading tasks</p>
+        <p className="text-xs text-red-400/80 max-w-md">{error.message}</p>
+        <details className="mt-4 text-left">
+          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+            Technical details
+          </summary>
+          <pre className="mt-2 text-xs text-gray-600 bg-gray-900/50 p-3 rounded border border-gray-800 overflow-auto max-w-md">
+            {error.stack || JSON.stringify(error, null, 2)}
+          </pre>
+        </details>
       </div>
     );
   }

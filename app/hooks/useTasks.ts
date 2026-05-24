@@ -14,11 +14,13 @@ export function useTasks() {
   } = useQuery({
     queryKey: taskKeys.lists(),
     queryFn: getAllTasks,
-    refetchInterval: 3000, // Poll every 3 seconds for task updates
-    staleTime: 2000, // Consider data stale after 2 seconds
+    refetchInterval: 10000, // Poll every 3 seconds for task updates
+    staleTime: 20000, // Consider data stale after 2 seconds
   });
 
   // Mutation to create a new task
+  console.log("error",error);
+  
   const createTaskMutation = useMutation({
     mutationFn: createTask,
     onSuccess: (newTask) => {
