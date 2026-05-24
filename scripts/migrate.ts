@@ -7,14 +7,18 @@ import postgres from "postgres";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  console.error(
-    "❌ DATABASE_URL environment variable is not set. Please configure it in your .env file."
-  );
-  process.exit(1);
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    console.error(
+      `❌ ${name} environment variable is not set. Please configure it in your .env file.`
+    );
+    process.exit(1);
+  }
+  return value;
 }
+
+const databaseUrl = requireEnv("DATABASE_URL");
 
 // Parse DATABASE_URL to handle SSL requirements
 let sslConfig: boolean | object = false;
